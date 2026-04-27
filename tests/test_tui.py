@@ -5,32 +5,13 @@ from familias.tui.compute import (
     power_of_exclusion_one_parent, single_locus_lr,
     make_duo_pedigrees, make_trio_pedigrees,
 )
-from familias.tui.freq_loader import (
-    builtin_databases, load_cap_txt, load_fsigen_csv,
-)
+from familias.tui.freq_loader import builtin_databases
 from familias.tui.widgets import parse_genotype, fmt_genotype
 
 
 def test_builtin_databases_includes_norwegian():
     dbs = builtin_databases()
     assert any(k.startswith("NorwegianFrequencies") for k in dbs)
-
-
-def test_cap_loader_parses_blocks():
-    db = load_cap_txt(
-        "/Users/calvinchong/projects/forensicpopdata/CAPdata/2024b/"
-        "Dry challenge allele frequency database.txt"
-    )
-    assert "CSF1PO" in db
-    assert 0.999 < sum(db["CSF1PO"].values()) < 1.001
-
-
-def test_fsigen_loader():
-    db = load_fsigen_csv(
-        "/Users/calvinchong/projects/forensicpopdata/inst/extdata/"
-        "FBI_extended_Cauc_022024.csv"
-    )
-    assert "TPOX" in db
 
 
 def test_parse_genotype_variants():

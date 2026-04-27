@@ -146,13 +146,8 @@ D2S1338, D19S433, vWA, TPOX, D18S51, D5S818, FGA
 Allele frequencies can be loaded from:
 
 * the bundled `NorwegianFrequencies`,
-* a CAP-style tab-separated TXT (`Dry challenge allele frequency database.txt`),
-* an FSIgen-format CSV (e.g. `forensicpopdata`'s `FBI_extended_Cauc_022024.csv`),
 * a JSON file (`{locus: {allele: freq}}`),
 * an R `.rda` file (requires the optional `pyreadr` extra).
-
-If a sibling `forensicpopdata/` checkout is found next to `Familias-py/`, its
-CAP datasets and FSIgen CSVs are auto-discovered in the database picker.
 
 Install + run:
 
