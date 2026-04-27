@@ -13,7 +13,7 @@ DEFAULT_LOCI = [
     "D7S820",
     "CSF1PO",
     "D3S1358",
-    "THO1",
+    "TH01",
     "D13S317",
     "D16S539",
     "D2S1338",
@@ -29,7 +29,7 @@ DEFAULT_LOCI = [
 # Dye-channel groupings (used to colour the leftmost column of the TUI).
 LOCUS_COLOR_GROUPS = [
     ("blue",  "Blue",  ["D8S1179", "D21S11", "D7S820", "CSF1PO"]),
-    ("green", "Green", ["D3S1358", "THO1", "D13S317", "D16S539", "D2S1338"]),
+    ("green", "Green", ["D3S1358", "TH01", "D13S317", "D16S539", "D2S1338"]),
     ("white", "Black", ["D19S433", "vWA", "TPOX", "D18S51"]),
     ("red",   "Red",   ["D5S818", "FGA"]),
 ]

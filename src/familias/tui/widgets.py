@@ -133,6 +133,7 @@ class FreqCell(Vertical):
                                 text-style: bold; }
     FreqCell .nr { width: 12; height: 1; color: $text-muted; content-align: left middle; }
     FreqCell .ro { width: 12; height: 1; content-align: left middle; color: $warning; }
+    FreqCell .db { width: 12; height: 1; content-align: left middle; color: $foreground; }
     """
 
     class Changed(Message):
@@ -231,7 +232,8 @@ class FreqCell(Vertical):
             for allele, is_nr, fixed in chunk:
                 row.mount(Label(f"{allele}=", classes="lab"))
                 if fixed is not None:
-                    row.mount(Static(fixed, classes="ro"))
+                    cls = "ro" if allele in ("MR", "PE") else "db"
+                    row.mount(Static(fixed, classes=cls))
                 elif is_nr:
                     row.mount(Static("NR", classes="nr"))
                 else:

@@ -485,7 +485,11 @@ class _PaternityBase(Screen):
             items.append(("PE", False,
                           f"{pe_val:.4f}" if pe_val is not None else "?"))
         for a in alleles_present:
-            items.append((a, _nr(a) and not mismatch, None))
+            is_nr = _nr(a) and not mismatch
+            if a in db_freqs and not is_nr:
+                items.append((a, False, f"{db_freqs[a]:.4f}"))
+            else:
+                items.append((a, is_nr, None))
         defaults = {a: db_freqs[a] for a in alleles_present if a in db_freqs}
         row.freq.set_alleles(items, defaults=defaults,
                              force_defaults=self._force_defaults)
@@ -870,8 +874,14 @@ class ArbitraryScreen(Screen):
             self._lrs[row.locus] = None
             return
         db_freqs = self._db_freqs(row.locus)
+        items: List[Tuple[str, bool, Optional[str]]] = []
+        for a in alleles_present:
+            if a in db_freqs:
+                items.append((a, False, f"{db_freqs[a]:.4f}"))
+            else:
+                items.append((a, False, None))
         row.freq.set_alleles(
-            [(a, False, None) for a in alleles_present],
+            items,
             defaults={a: db_freqs[a] for a in alleles_present if a in db_freqs},
             force_defaults=self._force_defaults,
         )
