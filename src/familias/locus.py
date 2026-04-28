@@ -33,10 +33,7 @@ def _pK_compute(paj: np.ndarray, d: np.ndarray) -> np.ndarray:
     if 2 * w.max() > w.sum():
         raise ValueError("Task impossible with this input")
     ord_ = np.argsort(-w)
-    Perm = np.zeros((n, n))
-    for i in range(n):
-        Perm[i, ord_[i]] = 1
-    w_sorted = Perm @ w
+    w_sorted = w[ord_]
     eps = 1e-5
     p = np.zeros(n)
     Kmax = 0.25 / w_sorted[0]
@@ -56,7 +53,9 @@ def _pK_compute(paj: np.ndarray, d: np.ndarray) -> np.ndarray:
         K = brentq(gfun, eps, Kmax)
         p[0] = 0.5 * (1 + np.sqrt(1 - 4 * K * w_sorted[0]))
         p[1:] = 0.5 * (1 - np.sqrt(1 - 4 * K * w_sorted[1:]))
-    return Perm.T @ p
+    p_out = np.empty_like(p)
+    p_out[ord_] = p
+    return p_out
 
 
 def _SgivenMopt(M, S0, p, *, rm_lower=None):
@@ -148,13 +147,9 @@ def _stabilize(M: np.ndarray, pe: np.ndarray, method: str, t: float = 1.0) -> di
         # Build constraint matrix C and rhs b (analogous to R formulation)
         m = n * n
         C = np.zeros((2 * n, m))
-        for i in range(n):
-            C[0:n, n * i:n * (i + 1)] = np.eye(n)
-            C[n + i, n * i:n * (i + 1)] = pe
-        # Last constraint: sum_i pe[i] * P[i, n-1] for last column == something  -- mimic R
+        C[:n, :] = np.tile(np.eye(n), (1, n))
+        C[n:2 * n, :] = np.kron(np.eye(n), pe.reshape(1, -1))
         C[2 * n - 1, :] = 0
-        for i in range(n):
-            C[2 * n - 1, n * (n - 1) + i] = 0  # cleared by R as well
         b = np.concatenate([np.ones(n), pe[:-1], [1 - R]])
         xM = M.flatten(order="F")
         lb = ((1 - t) * np.eye(n)).flatten(order="F")
@@ -203,27 +198,25 @@ def _stabilize(M: np.ndarray, pe: np.ndarray, method: str, t: float = 1.0) -> di
 # ---------------------------------------------------------------------------
 
 def _mutation_equal(n_all: int, n_alleles: int, rate: float) -> np.ndarray:
-    M = np.eye(n_alleles)
     if rate == 0 or n_all <= 1:
-        return M
+        return np.eye(n_alleles, dtype=float)
     off = rate / (n_all - 1)
-    for i in range(n_all):
-        for j in range(n_all):
-            M[i, j] = (1 - rate) if i == j else off
+    M = np.eye(n_alleles, dtype=float)
+    M[:n_all, :n_all] = off
+    M[:n_all, :n_all][np.arange(n_all), np.arange(n_all)] = 1 - rate
     return M
 
 
 def _mutation_proportional(freq: np.ndarray, n_alleles: int, rate: float) -> np.ndarray:
-    M = np.eye(n_alleles)
     n_all = freq.size
     if rate == 0:
-        return M
+        return np.eye(n_alleles, dtype=float)
     sumfreq = freq.sum()
     frq = freq / sumfreq
     alpha = rate / sumfreq / float(np.sum(frq * (1 - frq)))
-    for i in range(n_all):
-        for j in range(n_all):
-            M[i, j] = (1 - alpha + alpha * frq[j]) if i == j else alpha * frq[j]
+    M = np.eye(n_alleles, dtype=float)
+    M[:n_all, :n_all] = alpha * frq[None, :]
+    M[:n_all, :n_all][np.arange(n_all), np.arange(n_all)] = 1 - alpha + alpha * frq
     return M
 
 
@@ -244,18 +237,21 @@ def _mutation_stepwise(allele_names: Sequence[str], freq: np.ndarray, n_alleles:
     microgroup = np.round((numfreq - np.round(numfreq)) * 10).astype(int)
     for i in range(n_all):
         microcompats = (microgroup == microgroup[i])
+        n_compat = microcompats.sum()
+        all_compat = n_compat == n_all
+        only_self = n_compat == 1
         for j in range(n_all):
             if i == j:
-                if microcompats.all():
+                if all_compat:
                     M[i, j] = 1 - rate
-                elif microcompats.sum() == 1:
+                elif only_self:
                     M[i, j] = 1 - rate2
                 else:
                     M[i, j] = 1 - rate - rate2
             elif microcompats[j]:
                 M[i, j] = range_ ** abs(numfreq[i] - numfreq[j])
             else:
-                M[i, j] = rate2 / (n_all - microcompats.sum())
+                M[i, j] = rate2 / (n_all - n_compat)
         # Re-normalise the microcompat off-diagonal entries to sum to ``rate``
         mc = microcompats.copy()
         mc[i] = False
@@ -429,13 +425,14 @@ def familias_locus(
     if Stab not in ("NONE", "DP", "RM", "PM"):
         raise ValueError("Stabilization must be one of None, DP, RM, PM.")
     if Stab != "NONE":
-        zero_silent = (
-            has_silent
-            and np.all(mmM[:n_all, n_alleles - 1] == 0)
-            and np.all(mmM[n_alleles - 1, :n_all] == 0)
-            and np.all(fmM[:n_all, n_alleles - 1] == 0)
-            and np.all(fmM[n_alleles - 1, :n_all] == 0)
-        )
+        zero_silent = False
+        if has_silent:
+            zero_silent = (
+                np.all(mmM[:n_all, n_alleles - 1] == 0)
+                and np.all(mmM[n_alleles - 1, :n_all] == 0)
+                and np.all(fmM[:n_all, n_alleles - 1] == 0)
+                and np.all(fmM[n_alleles - 1, :n_all] == 0)
+            )
         if zero_silent:
             sub_pe = freq_arr[:n_all] / freq_arr[:n_all].sum()
             res = _stabilize(fmM[:n_all, :n_all], sub_pe, Stab, MaxStabilizedMutrate)
@@ -464,18 +461,16 @@ def familias_locus(
         fmM[0, 0] = 1.0
         mmM[0, 0] = 1.0
 
-    simple = True
-    for j in range(n_alleles):
-        col = np.delete(fmM[:, j], j)
-        if not np.allclose(np.round(col - col[0], 6), 0):
-            simple = False
-            break
-    if simple:
-        for j in range(n_alleles):
-            col = np.delete(mmM[:, j], j)
-            if not np.allclose(np.round(col - col[0], 6), 0):
-                simple = False
-                break
+    def _is_simple(M: np.ndarray, n_alleles: int) -> bool:
+        if n_alleles <= 1:
+            return True
+        ref = M[0, :].copy()
+        ref[0] = M[1, 0]
+        diff = np.abs(M - ref)
+        np.fill_diagonal(diff, 0)
+        return np.allclose(diff, 0, atol=0.5e-6)
+
+    simple = _is_simple(fmM, n_alleles) and _is_simple(mmM, n_alleles)
 
     alleles = {n: float(f) for n, f in zip(allelenames, freq_arr)}
     if name is None:
