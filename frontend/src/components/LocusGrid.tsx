@@ -9,7 +9,12 @@ interface Props {
   /** Optional display labels keyed by person id. Falls back to id. */
   personLabels?: Record<string, string>;
   onChange: (next: LocusRow[]) => void;
-  height?: number;
+  /**
+   * Maximum height in px. The grid auto-sizes to its content; this only
+   * caps how tall it can grow before scrolling kicks in. Set to
+   * ``undefined`` for unlimited (the page itself will scroll).
+   */
+  maxHeight?: number;
 }
 
 function genoStr(ab: [string, string]): string {
@@ -51,7 +56,7 @@ function fmtLR(v: number | null | undefined, reason?: string | null): string {
   return v.toFixed(4);
 }
 
-export default function LocusGrid({ rows, personIds, personLabels, onChange, height = 480 }: Props) {
+export default function LocusGrid({ rows, personIds, personLabels, onChange, maxHeight }: Props) {
   const gridRef = useRef<AgGridReact<LocusRow>>(null);
 
   const colDefs = useMemo<ColDef<LocusRow>[]>(() => {
@@ -118,7 +123,17 @@ export default function LocusGrid({ rows, personIds, personLabels, onChange, hei
   }, [rows]);
 
   return (
-    <div className="ag-theme-quartz grid-wrap" style={{ height, width: "100%" }}>
+    <div
+      className="ag-theme-quartz grid-wrap"
+      style={{
+        width: "100%",
+        // When maxHeight is provided, cap the grid; otherwise let it grow
+        // freely with the row count (page scrolls).
+        ...(maxHeight !== undefined
+          ? { maxHeight, overflow: "auto" }
+          : {}),
+      }}
+    >
       <AgGridReact<LocusRow>
         ref={gridRef}
         rowData={rows}
@@ -127,6 +142,7 @@ export default function LocusGrid({ rows, personIds, personLabels, onChange, hei
         getRowId={p => p.data.name}
         singleClickEdit={false}
         stopEditingWhenCellsLoseFocus
+        domLayout="autoHeight"
         onCellValueChanged={() => {
           // The grid mutated row data in place; surface a fresh array.
           onChange([...rows]);
