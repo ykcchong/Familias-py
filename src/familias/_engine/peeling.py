@@ -96,6 +96,8 @@ class _Link:
 
     def __init__(self) -> None:
         self.belongs_to: Optional["_LinkedList"] = None
+        self._ll_next: Optional["_Link"] = None
+        self._ll_prev: Optional["_Link"] = None
 
     # The "execute" / "add_tables" etc. methods are overridden in subclasses.
     def container_branch(self) -> Optional["Branch"]:
@@ -135,16 +137,33 @@ class _LinkedList:
         # Mirrors ``Linked_list::add`` which prepends to the front.
         if lk.belongs_to is not None:
             lk.belongs_to.remove(lk)
+        old_first = self._items[0] if self._items else None
         self._items.insert(0, lk)
+        lk._ll_next = old_first
+        lk._ll_prev = None
+        if old_first is not None:
+            old_first._ll_prev = lk
         lk.belongs_to = self
 
     def add_at_end(self, lk: _Link) -> None:
         if lk.belongs_to is not None:
             lk.belongs_to.remove(lk)
+        old_last = self._items[-1] if self._items else None
         self._items.append(lk)
+        lk._ll_prev = old_last
+        lk._ll_next = None
+        if old_last is not None:
+            old_last._ll_next = lk
         lk.belongs_to = self
 
     def remove(self, lk: _Link) -> None:
+        prev, nxt = lk._ll_prev, lk._ll_next
+        if prev is not None:
+            prev._ll_next = nxt
+        if nxt is not None:
+            nxt._ll_prev = prev
+        lk._ll_next = None
+        lk._ll_prev = None
         self._items.remove(lk)
         lk.belongs_to = None
 
@@ -152,8 +171,7 @@ class _LinkedList:
         return self._items[0] if self._items else None
 
     def get_next(self, lk: _Link) -> Optional[_Link]:
-        i = self._items.index(lk)
-        return self._items[i + 1] if i + 1 < len(self._items) else None
+        return lk._ll_next
 
     def n_elements(self) -> int:
         return len(self._items)
@@ -493,6 +511,10 @@ class Branch(_Link, _LinkedList):
             else:
                 must_move = True
             i += 1
+        # Rebuild _ll_prev/_ll_next after direct _items rearrangement.
+        for k, lk in enumerate(items):
+            lk._ll_prev = items[k - 1] if k > 0 else None
+            lk._ll_next = items[k + 1] if k + 1 < len(items) else None
 
     def add_tables(self, n_alleles: int) -> bool:
         for lk in self._items:
@@ -521,7 +543,7 @@ class Cutset(_Link):
         self._branch_list = _LinkedList() # type: ignore[assignment]
         self._pers_list.owner = self
         self._branch_list.owner = self
-        self._tab: Optional[np.ndarray] = None
+        self._tab: Optional[dict] = None
 
     # mimic the dual nature of the C++ multi-inheritance:
     def get_first_pers(self) -> Optional[Pers]:
@@ -611,7 +633,7 @@ class Cutset(_Link):
             if tablesize > MAX_TABLE_SIZE // n_alleles:
                 return True
             tablesize *= n_alleles
-        self._tab = np.full(tablesize, -1.0, dtype=float)
+        self._tab = {}  # dict-based sparse cache replaces dense np.full array
         for b in self._branch_list.items():
             if b.add_tables(n_alleles):  # type: ignore[union-attr]
                 return True
@@ -635,7 +657,7 @@ class Cutset(_Link):
         return self.get_first_pers().execute_cutset_part(sd, 0)
 
     def execute_cutset(self, sd: SystemData, index: int) -> float:
-        if self._tab[index] < 0:
+        if index not in self._tab:
             result = 1.0
             for b in self._branch_list.items():
                 result *= b.get_first().execute(sd)  # type: ignore[union-attr]

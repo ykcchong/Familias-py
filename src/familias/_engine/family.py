@@ -142,9 +142,10 @@ class Family:
         idx = self.persons.index(p)
         self.persons.pop(idx)
         del self._by_name[p.name]
-        # Rebuild ``next`` pointers
-        for i, q in enumerate(self.persons):
-            q.next = self.persons[i + 1] if i + 1 < len(self.persons) else None
+        # Fix only the single break point in the ``next`` chain.
+        if idx > 0:
+            self.persons[idx - 1].next = self.persons[idx] if idx < len(self.persons) else None
+        p.next = None
 
     def add_relation(self, parent: Person, child: Person) -> None:
         """Attach ``parent`` as a parent of ``child``; raises on cycle."""

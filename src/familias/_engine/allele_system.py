@@ -34,6 +34,7 @@ class AlleleSystem:
         assert mutation_matrix_male.shape == (n, n)
         self.name = name
         self.allele_names: List[str] = list(allele_names)
+        self._allele_index: Dict[str, int] = {name: i for i, name in enumerate(allele_names)}
         self.n_alleles: int = n
         self.probability = np.asarray(probability, dtype=float)
         self.mutation_matrix_female = np.asarray(mutation_matrix_female, dtype=float)
@@ -128,9 +129,9 @@ class AlleleSystem:
         else:
             n_data = n_alleles
             index = np.arange(n_alleles)
-            dataprob = self.probability.copy()
-            Mf = self.mutation_matrix_female.copy()
-            Mm = self.mutation_matrix_male.copy()
+            dataprob = self.probability
+            Mf = self.mutation_matrix_female
+            Mm = self.mutation_matrix_male
 
         self.index = index
         self.n_dataalleles = n_data

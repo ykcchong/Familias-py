@@ -5,7 +5,7 @@ subset of methods (no automated pedigree generation), so we only port:
 ``compute_posterior``.
 """
 from __future__ import annotations
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from .pedigree_core import Pedigree
 from .pater import Pater
 from .special import mypow, get_name_prefix
@@ -15,7 +15,10 @@ class PedigreeList:
     def __init__(self) -> None:
         self.n_named_persons: int = 0
         self.male: List[int] = []
-        self.fixed_parent: List[int] = []  # n_named * n_named
+        # Sparse dict: (parent_index, child_index) -> 1 for fixed relations.
+        # Replaces the dense n×n flat list to avoid O(n²) reallocation on
+        # add_person / remove_person.
+        self._fp: Dict[Tuple[int, int], int] = {}
         self.pedigrees: List[Pedigree] = []
 
     def n_pedigrees(self) -> int:
@@ -25,26 +28,19 @@ class PedigreeList:
         return self.pedigrees[i]
 
     def add_person(self, male: int) -> None:
-        n_old = self.n_named_persons
-        n_new = n_old + 1
-        new_fp = [0] * (n_new * n_new)
-        for i in range(n_old):
-            for j in range(n_old):
-                new_fp[i + j * n_new] = self.fixed_parent[i + j * n_old]
-        self.fixed_parent = new_fp
+        # With a sparse dict there is no matrix to resize — O(1).
         self.male.append(male)
-        self.n_named_persons = n_new
+        self.n_named_persons += 1
         for p in self.pedigrees:
             p.add_person(male)
 
     def add_pedigree(self, n_extra_females: int, n_extra_males: int) -> int:
         """Append a pedigree containing only the fixed relations. Returns its index."""
-        n_total = self.n_named_persons + n_extra_females + n_extra_males
-        full = [0] * (n_total * n_total)
         n_named = self.n_named_persons
-        for i in range(n_named):
-            for j in range(n_named):
-                full[i + j * n_total] = self.fixed_parent[i + j * n_named]
+        n_total = n_named + n_extra_females + n_extra_males
+        full = [0] * (n_total * n_total)
+        for (p, c) in self._fp:
+            full[p + c * n_total] = 1
         self.pedigrees.append(
             Pedigree(n_named, n_extra_females, n_extra_males, list(self.male), full)
         )
@@ -64,7 +60,7 @@ class PedigreeList:
         n = self.n_named_persons
         if not (0 <= parent_index < n and 0 <= child_index < n):
             raise IndexError("parent/child index out of range")
-        self.fixed_parent[parent_index + child_index * n] = 1
+        self._fp[(parent_index, child_index)] = 1
         kept: List[Pedigree] = []
         removed: List[int] = []
         for p in self.pedigrees:
@@ -81,33 +77,29 @@ class PedigreeList:
         n = self.n_named_persons
         if not (0 <= parent_index < n and 0 <= child_index < n):
             raise IndexError("parent/child index out of range")
-        self.fixed_parent[parent_index + child_index * n] = 0
+        self._fp.pop((parent_index, child_index), None)
         for p in self.pedigrees:
             p.remove_relation(parent_index, child_index)
 
     def is_fixed_parent(self, parent_index: int, child_index: int) -> bool:
-        n = self.n_named_persons
-        return bool(self.fixed_parent[parent_index + child_index * n])
+        return (parent_index, child_index) in self._fp
 
     # ---- removal (parity with C++ PedigreeList) ----------------------
     def remove_person(self, index: int) -> None:
         n_old = self.n_named_persons
         if not (0 <= index < n_old):
             raise IndexError("person index out of range")
-        n_new = n_old - 1
-        new_fp = [0] * (n_new * n_new)
-        for j in range(n_old):
-            if j == index:
+        # Rebuild sparse dict: drop entries touching `index`, renumber the rest.
+        new_fp: Dict[Tuple[int, int], int] = {}
+        for (p, c) in self._fp:
+            if p == index or c == index:
                 continue
-            jj = j if j < index else j - 1
-            for i in range(n_old):
-                if i == index:
-                    continue
-                ii = i if i < index else i - 1
-                new_fp[ii + jj * n_new] = self.fixed_parent[i + j * n_old]
-        self.fixed_parent = new_fp
+            np_ = p - (1 if p > index else 0)
+            nc = c - (1 if c > index else 0)
+            new_fp[(np_, nc)] = 1
+        self._fp = new_fp
         del self.male[index]
-        self.n_named_persons = n_new
+        self.n_named_persons -= 1
         for p in self.pedigrees:
             p.remove_person(index)
 
@@ -176,9 +168,14 @@ class PedigreeList:
                           names: List[str]) -> List[List[float]]:
         """Return a 2-D list ``likelihoods[ped][system]``."""
         prefix = get_name_prefix(names)
+        # Build a flat fixed-parent list once (used by each Pedigree.compute_probability).
+        n = self.n_named_persons
+        flat_fp = [0] * (n * n)
+        for (p, c) in self._fp:
+            flat_fp[p + c * n] = 1
         out: List[List[float]] = []
-        for p in self.pedigrees:
-            res = p.compute_probability(pat, self.fixed_parent, names, prefix, make_cutsets)
+        for ped in self.pedigrees:
+            res = ped.compute_probability(pat, flat_fp, names, prefix, make_cutsets)
             out.append(res)
         return out
 
@@ -206,9 +203,8 @@ class PedigreeList:
             )
         parent = [0] * (n_total * n_total)
         # Seed with fixed relations (only between named persons).
-        for i in range(n_named):
-            for j in range(n_named):
-                parent[i + j * n_total] = self.fixed_parent[i + j * n_named]
+        for (p, c) in self._fp:
+            parent[p + c * n_total] = 1
         self._gen_parents_for_person(
             0, parent, n_total,
             n_extra_females, 0,

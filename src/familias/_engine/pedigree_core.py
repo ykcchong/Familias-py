@@ -201,22 +201,67 @@ class Pedigree:
         return False
 
     def compute_inbreeding(self) -> int:
+        n = self.n_total
+        # Precompute the full ancestor set for every person once, then check
+        # pairs via set intersection — O(n²) worst case but avoids redundant
+        # traversals from the original O(n) calls to has_common_ancestor().
+        ancestor_sets: List[set] = []
+        for i in range(n):
+            visited: set = set()
+            stack = [i]
+            while stack:
+                curr = stack.pop()
+                if curr in visited:
+                    continue
+                visited.add(curr)
+                f = self.father[curr]
+                m = self.mother[curr]
+                if f != -1:
+                    stack.append(f)
+                if m != -1:
+                    stack.append(m)
+            ancestor_sets.append(visited)
         n_inb = 0
-        for i in range(self.n_total):
+        for i in range(n):
             if self.father[i] != -1 and self.mother[i] != -1:
-                if self.has_common_ancestor(self.father[i], self.mother[i]):
+                if ancestor_sets[self.father[i]] & ancestor_sets[self.mother[i]]:
                     n_inb += 1
         return n_inb
 
     def compute_promiscuity(self) -> int:
-        n_pairs = 0
+        # Group children by parent, then count half-sibling pairs within each
+        # group — O(s²) per group (s = group size) rather than O(n²) overall.
+        children_by_mother: dict = {}
+        children_by_father: dict = {}
         for i in range(self.n_total):
-            for j in range(i):
-                if self.mother[i] >= 0 and self.mother[i] == self.mother[j]:
-                    if self.father[i] != self.father[j] or (self.father[i] == -1 and self.father[j] == -1):
+            m = self.mother[i]
+            if m >= 0:
+                if m not in children_by_mother:
+                    children_by_mother[m] = []
+                children_by_mother[m].append(i)
+            f = self.father[i]
+            if f >= 0:
+                if f not in children_by_father:
+                    children_by_father[f] = []
+                children_by_father[f].append(i)
+        n_pairs = 0
+        # Same mother, different fathers (or both father-less)
+        for children in children_by_mother.values():
+            for a in range(len(children)):
+                for b in range(a + 1, len(children)):
+                    ci, cj = children[a], children[b]
+                    if self.father[ci] != self.father[cj] or (
+                        self.father[ci] == -1 and self.father[cj] == -1
+                    ):
                         n_pairs += 1
-                elif self.father[i] >= 0 and self.father[i] == self.father[j]:
-                    if self.mother[i] != self.mother[j] or (self.mother[i] == -1 and self.mother[j] == -1):
+        # Same father, different mothers (or both mother-less)
+        for children in children_by_father.values():
+            for a in range(len(children)):
+                for b in range(a + 1, len(children)):
+                    ci, cj = children[a], children[b]
+                    if self.mother[ci] != self.mother[cj] or (
+                        self.mother[ci] == -1 and self.mother[cj] == -1
+                    ):
                         n_pairs += 1
         return n_pairs
 

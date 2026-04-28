@@ -30,7 +30,7 @@ class FamInterface:
         self.pedset = PedigreeList()
         self.n_persons: int = 0
         self.male: List[bool] = []
-        self.is_child: List[bool] = []
+        self.is_child: List[int] = []
         self.yob: List[int] = []  # year of birth (0 means unknown)
         self.internal_person_name: List[str] = []
         # Allele systems are owned by ``self.pat``, but we also keep a
@@ -55,8 +55,8 @@ class FamInterface:
         self.male.append(bool(male))
         self.yob.append(int(yob))
         if is_child is None:
-            is_child = False
-        self.is_child.append(bool(is_child))
+            is_child = 0
+        self.is_child.append(int(is_child))
         name = self._new_internal_name()
         self.internal_person_name.append(name)
         self.pat.add_person(name, bool(male))
@@ -214,10 +214,9 @@ class FamInterface:
         ``likelihoods`` is a 2-D array of shape ``(n_kept_peds, n_systems)``.
         """
         redundant = self.pedset.remove_equivalent_pedigrees()
-        is_child = [int(b) for b in self.is_child]
         probabilities = self.pedset.compute_prior(
             generations_parameter, max_generations,
-            inbreeding_parameter, promiscuity_parameter, is_child,
+            inbreeding_parameter, promiscuity_parameter, self.is_child,
         )
         if not probabilities:
             raise RuntimeError("All pedigrees have zero prior probability.")

@@ -80,8 +80,8 @@ class Pater:
         p = self.family.get(person_name)
         if p is None:
             raise KeyError(f"Unknown person {person_name!r}")
-        a1 = sys.allele_names.index(allele1_name)
-        a2 = sys.allele_names.index(allele2_name)
+        a1 = sys._allele_index[allele1_name]
+        a2 = sys._allele_index[allele2_name]
         sys.add_data(p, a1, a2)
         self.recalculate = True
 
