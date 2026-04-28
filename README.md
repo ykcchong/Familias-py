@@ -20,10 +20,14 @@ peeling recursion itself is plain Python, mirroring the C++ structure.
 pip install -e .
 ```
 
-Optional plotting:
+Optional extras:
 
 ```bash
-pip install -e ".[plot]"
+pip install -e ".[plot]"        # matplotlib + networkx pedigree drawing
+pip install -e ".[tui]"         # Textual terminal UI (familias-tui)
+pip install -e ".[web]"         # FastAPI/uvicorn web UI (familias-web)
+pip install -e ".[rda]"         # load R .rda allele-frequency files
+pip install -e ".[test]"        # pytest + httpx for the test suite
 ```
 
 ## Quick start
@@ -91,6 +95,16 @@ paternity case with AF=A/B, M=A/C, CH=A/A and no mutation:
 * `plot_familias_pedigree(ped)`
 * `NorwegianFrequencies` (a dict of locus -> {allele: freq})
 
+### Bundled allele-frequency datasets
+
+The package ships two locus-frequency databases under `familias/data/`:
+
+* `norwegian_frequencies.json` — the legacy R-package dataset, exposed
+  programmatically as `familias.NorwegianFrequencies`. Not exposed in the
+  TUI / web picker.
+* `fsi.json` — Hong Kong Chinese frequencies, exposed in the TUI / web
+  picker as **Hong Kong Chinese** (the default selection).
+
 ## Low-level engine API
 
 The `familias._engine.FamInterface` class mirrors the C++ `FamInterface`
@@ -145,7 +159,10 @@ D2S1338, D19S433, vWA, TPOX, D18S51, D5S818, FGA
 
 Allele frequencies can be loaded from:
 
-* the bundled `NorwegianFrequencies`,
+* the bundled **Hong Kong Chinese** database (shown as
+  `Hong Kong Chinese` in the picker; sourced from `src/familias/data/fsi.json`),
+* `NorwegianFrequencies` (importable as a Python dict, but not exposed in the
+  TUI/web picker by default),
 * a JSON file (`{locus: {allele: freq}}`),
 * an R `.rda` file (requires the optional `pyreadr` extra).
 
@@ -154,4 +171,62 @@ Install + run:
 ```bash
 pip install -e ".[tui]"          # add textual + pandas
 familias-tui                      # or: python -m familias.tui
+```
+
+## Web UI
+
+A FastAPI + React/AG Grid web front-end is also bundled. It mirrors the TUI
+features and is served by a single `uvicorn` process that hosts both the
+REST API (`/api/*`) and the pre-built single-page application from
+`familias/web/dist/`. Three workflows are exposed (matching the TUI):
+
+1. **One-parent** — Tested Parent vs. unrelated. Two persons
+   (Tested Parent, Child).
+2. **Two-parent** — Known Parent + Tested Parent vs. Known Parent only.
+   Three persons (Tested Parent, Known Parent, Child).
+3. **Arbitrary** — up to 8 persons with custom parent → child relations;
+   tag one or more as `test` to define H₁ vs H₂.
+
+Person column headers use the friendly labels above; the underlying wire
+identifiers remain `AF`/`MO`/`CH` so the bundled pedigree templates apply
+unchanged.
+
+Highlights:
+
+* **Live per-locus LR** — debounced single-locus calls update the LR column
+  as you type genotypes / frequencies.
+* **Plain-decimal output** — combined and per-locus LR are shown as
+  `toFixed(4)` (no scientific notation); posterior P(H₁) is shown as a
+  percentage (`xx.xxxx%`).
+* **Frequency database picker** — defaults to the bundled
+  **Hong Kong Chinese** database. A **Manual Input** entry disables
+  database-driven auto-fill (used automatically after loading a JSON case
+  file so user-supplied frequencies are preserved verbatim). Choosing a
+  real database and clicking **Apply DB** overwrites observed-allele
+  frequencies for the loaded data.
+* **Verbatim frequencies + Rest top-up** — frequencies are used as-is; if
+  the per-locus sum is < 1, the missing mass is placed in a synthetic
+  `__rest__` allele rather than renormalising rare alleles.
+* **HTTPS** — pass `--ssl-certfile` / `--ssl-keyfile` (and optionally
+  `--ssl-keyfile-password`) to enable TLS.
+
+Install + run:
+
+```bash
+pip install -e ".[web]"           # add fastapi + uvicorn + pandas
+familias-web                       # default: http://127.0.0.1:8765/
+# Common options:
+familias-web --host 0.0.0.0 --port 8443 \
+    --ssl-certfile cert.pem --ssl-keyfile key.pem
+familias-web --no-browser --reload     # development
+```
+
+The web UI ships its compiled bundle inside the wheel, so the JavaScript
+toolchain is **not** required at install time. Rebuilding the bundle
+(only needed when changing `frontend/src/`) requires Node 18+:
+
+```bash
+cd frontend
+npm install
+npm run build      # writes ../src/familias/web/dist/
 ```
