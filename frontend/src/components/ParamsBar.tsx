@@ -1,4 +1,4 @@
-import type { ModeState } from "../state/caseState";
+import { MANUAL_DB, type ModeState } from "../state/caseState";
 
 interface Props {
   state: ModeState;
@@ -13,18 +13,29 @@ export default function ParamsBar({
   state, databases, onChange, onApplyDatabase, onCompute, computing,
 }: Props) {
   const p = state.params;
+  const inManual = p.database === MANUAL_DB || !p.database;
   return (
     <div className="params">
       <label>
         Database
         <select
-          value={p.database}
+          value={inManual ? MANUAL_DB : p.database}
           onChange={e => onChange({ database: e.target.value })}
         >
+          <option value={MANUAL_DB}>Manual Input</option>
           {databases.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </label>
-      <button className="secondary" onClick={onApplyDatabase}>Apply DB</button>
+      <button
+        className="secondary"
+        onClick={onApplyDatabase}
+        disabled={inManual}
+        title={inManual
+          ? "Pick a database from the dropdown to enable Apply DB."
+          : "Overwrite observed-allele frequencies from the selected database."}
+      >
+        Apply DB
+      </button>
 
       <label>
         Mutation model

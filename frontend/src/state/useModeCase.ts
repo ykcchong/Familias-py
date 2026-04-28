@@ -3,6 +3,7 @@ import { api, type ComputeResponse, type Person, type Relation } from "../apiCli
 import {
   buildCase,
   DEFAULT_PARAMS,
+  MANUAL_DB,
   type LocusRow,
   type Mode,
   type ModeState,
@@ -81,7 +82,7 @@ export function useModeCase({ mode, initialPersons, initialRelations }: InitArgs
 
   const applyDatabase = useCallback(async () => {
     const name = state.params.database;
-    if (!name) return;
+    if (!name || name === MANUAL_DB) return;
     let body = databaseCache[name];
     if (!body) {
       const got = await api.database(name);
@@ -108,9 +109,12 @@ export function useModeCase({ mode, initialPersons, initialRelations }: InitArgs
   //   - drop frequencies for alleles no longer observed
   //   - fill missing observed alleles from active DB cache (when present)
   // Manual user entries for observed alleles are preserved.
+  // In Manual Input mode, this effect is a no-op so file-loaded freqs
+  // are never silently mutated.
   useEffect(() => {
     const dbName = state.params.database;
-    const body = dbName ? databaseCache[dbName] : undefined;
+    if (!dbName || dbName === MANUAL_DB) return;
+    const body = databaseCache[dbName];
     let changed = false;
     const next = state.loci.map(r => {
       const observed = observedAlleles(r);

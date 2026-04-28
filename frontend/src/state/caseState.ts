@@ -29,6 +29,11 @@ export interface ModeState {
   combined?: ComputeResponse;
 }
 
+/** Sentinel value for the database picker meaning "don't auto-apply
+ * a database; preserve whatever frequencies are currently in each row."
+ * Selecting this also makes the Apply DB button a no-op. */
+export const MANUAL_DB = "__manual__";
+
 export const DEFAULT_PARAMS = {
   mutation_model: "Equal",
   mutation_rate: 0,
@@ -188,7 +193,10 @@ export function importCase(file: TuiCaseFile, current: ModeState): ModeState {
       ...current.params,
       mutation_rate: file.mut_rate ?? current.params.mutation_rate,
       kinship: file.kinship ?? current.params.kinship,
-      database: file.database ?? current.params.database,
+      // After loading a case file, force Manual mode so the auto-sync
+      // does not overwrite the file's verbatim frequencies. The user can
+      // still pick a DB and click "Apply DB" to override.
+      database: MANUAL_DB,
     },
   };
 }
