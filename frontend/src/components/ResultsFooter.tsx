@@ -13,10 +13,10 @@ function fmt(n: number, digits = 4): string {
 }
 
 // LR is shown as a plain decimal (no scientific notation), with up to
-// 2 fractional digits.
+// 4 fractional digits.
 function fmtLR(n: number): string {
   if (!Number.isFinite(n)) return String(n);
-  return n.toFixed(2);
+  return n.toFixed(4);
 }
 
 // Posterior probability as a percentage, e.g. "99.9876%". Up to 4

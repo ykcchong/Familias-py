@@ -47,8 +47,8 @@ function parseFreqs(s: string): Record<string, number> {
 function fmtLR(v: number | null | undefined, reason?: string | null): string {
   if (v === null || v === undefined) return reason ? "—" : "";
   if (!Number.isFinite(v)) return String(v);
-  // Plain decimal display (no scientific notation): up to 2 fractional digits.
-  return v.toFixed(2);
+  // Plain decimal display (no scientific notation): up to 4 fractional digits.
+  return v.toFixed(4);
 }
 
 export default function LocusGrid({ rows, personIds, personLabels, onChange, height = 480 }: Props) {
@@ -96,7 +96,7 @@ export default function LocusGrid({ rows, personIds, personLabels, onChange, hei
     cols.push({
       headerName: "LR",
       colId: "lr",
-      width: 110,
+      width: 165,
       editable: false,
       valueGetter: (p: ValueGetterParams<LocusRow>) =>
         p.data ? fmtLR(p.data.liveLR, p.data.liveReason) : "",
