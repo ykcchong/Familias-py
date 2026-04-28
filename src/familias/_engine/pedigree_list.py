@@ -123,20 +123,20 @@ class PedigreeList:
         """Mark equivalent pedigrees as redundant and remove them.
 
         Returns a list of indicators of length ``n_pedigrees`` (1 = removed).
+        Uses a hash set for O(1) duplicate lookup instead of the O(n²)
+        pairwise comparison used in the original C++ code.
         """
         kept: List[Pedigree] = []
         removed: List[int] = []
+        seen: set = set()
         for p in self.pedigrees:
             p.prune_and_remove()
             p.change_to_standard_form()
-            duplicate = False
-            for q in kept:
-                if p.is_equal_to(q):
-                    duplicate = True
-                    break
-            if duplicate:
+            key = (p.n_named_persons, tuple(p.mother), tuple(p.father), tuple(p.male))
+            if key in seen:
                 removed.append(1)
             else:
+                seen.add(key)
                 kept.append(p)
                 removed.append(0)
         self.pedigrees = kept

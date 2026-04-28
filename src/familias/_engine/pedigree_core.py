@@ -157,22 +157,47 @@ class Pedigree:
             self.male = new_male
 
     # ---- inbreeding / promiscuity / generations -------------------
-    def has_common_ancestor(self, p1: int, p2: int) -> bool:
-        if self.is_ancestor(p1, p2):
-            return True
-        if self.father[p1] != -1 and self.has_common_ancestor(self.father[p1], p2):
-            return True
-        if self.mother[p1] != -1 and self.has_common_ancestor(self.mother[p1], p2):
-            return True
-        return False
-
     def is_ancestor(self, ancestor: int, descendant: int) -> bool:
         if ancestor == descendant:
             return True
-        if self.father[descendant] != -1 and self.is_ancestor(ancestor, self.father[descendant]):
-            return True
-        if self.mother[descendant] != -1 and self.is_ancestor(ancestor, self.mother[descendant]):
-            return True
+        stack = [descendant]
+        while stack:
+            curr = stack.pop()
+            f = self.father[curr]
+            m = self.mother[curr]
+            if f == ancestor or m == ancestor:
+                return True
+            if f != -1:
+                stack.append(f)
+            if m != -1:
+                stack.append(m)
+        return False
+
+    def has_common_ancestor(self, p1: int, p2: int) -> bool:
+        ancestors = set()
+        stack = [p1]
+        while stack:
+            curr = stack.pop()
+            if curr in ancestors:
+                continue
+            ancestors.add(curr)
+            f = self.father[curr]
+            m = self.mother[curr]
+            if f != -1:
+                stack.append(f)
+            if m != -1:
+                stack.append(m)
+        stack = [p2]
+        while stack:
+            curr = stack.pop()
+            if curr in ancestors:
+                return True
+            f = self.father[curr]
+            m = self.mother[curr]
+            if f != -1:
+                stack.append(f)
+            if m != -1:
+                stack.append(m)
         return False
 
     def compute_inbreeding(self) -> int:
@@ -195,24 +220,45 @@ class Pedigree:
                         n_pairs += 1
         return n_pairs
 
-    def _get_max_generations(self, i: int) -> int:
+    # ---- helpers ----------------------------------------------------
+    def _children_list(self) -> List[List[int]]:
+        """Return a list where ``children[i]`` contains all indices of
+        children of person ``i``."""
+        n = self.n_total
+        children: List[List[int]] = [[] for _ in range(n)]
+        for j in range(n):
+            m = self.mother[j]
+            if m >= 0:
+                children[m].append(j)
+            f = self.father[j]
+            if f >= 0:
+                children[f].append(j)
+        return children
+
+    def _get_max_generations(self, i: int, memo: dict | None = None) -> int:
+        if memo is None:
+            memo = {}
+        if i in memo:
+            return memo[i]
         result = 0
         if self.father[i] != -1:
-            tmp = self._get_max_generations(self.father[i])
+            tmp = self._get_max_generations(self.father[i], memo)
             if tmp > 0 or self.father[i] < self.n_named_persons:
                 result = tmp + 1
         if self.mother[i] != -1:
-            tmp = self._get_max_generations(self.mother[i])
+            tmp = self._get_max_generations(self.mother[i], memo)
             if tmp > 0 or self.mother[i] < self.n_named_persons:
                 if tmp + 1 > result:
                     result = tmp + 1
+        memo[i] = result
         return result
 
     def compute_generations(self, is_child: List[int]) -> int:
         max_gen = 0
+        memo: dict = {}
         for i in range(self.n_named_persons):
             if not is_child[i]:
-                g = self._get_max_generations(i)
+                g = self._get_max_generations(i, memo)
                 if g > max_gen:
                     max_gen = g
         return max_gen
@@ -221,17 +267,14 @@ class Pedigree:
     def get_pruning(self) -> List[int]:
         n = self.n_total
         result = [0] * n
+        children = self._children_list()
         finished = False
         while not finished:
             finished = True
             # Step 1: remove extras with no children
             for i in range(self.n_named_persons, n):
                 if result[i] == 0:
-                    has_child = False
-                    for j in range(n):
-                        if (self.mother[j] == i or self.father[j] == i) and result[j] == 0:
-                            has_child = True
-                            break
+                    has_child = any(result[j] == 0 for j in children[i])
                     if not has_child:
                         result[i] = 1
                         finished = False
@@ -242,10 +285,7 @@ class Pedigree:
                         continue
                     if self.mother[i] >= 0 and result[self.mother[i]] == 0:
                         continue
-                    own_children = 0
-                    for j in range(n):
-                        if (self.mother[j] == i or self.father[j] == i) and result[j] == 0:
-                            own_children += 1
+                    own_children = sum(1 for j in children[i] if result[j] == 0)
                     if own_children > 1:
                         continue
                     result[i] = 1
@@ -275,27 +315,29 @@ class Pedigree:
             else:
                 i += 1
 
-    def _mark(self, i: int, pruned: List[int], marks: List[int]) -> None:
+    def _mark(self, i: int, pruned: List[int], marks: List[int],
+              children: List[List[int]]) -> None:
         marks[i] = 1
-        for j in range(self.n_total):
-            if (self.mother[j] == i or self.father[j] == i) and pruned[j] != 1 and marks[j] == 0:
-                self._mark(j, pruned, marks)
+        for j in children[i]:
+            if pruned[j] != 1 and marks[j] == 0:
+                self._mark(j, pruned, marks, children)
         if self.father[i] != -1 and pruned[self.father[i]] != 1 and marks[self.father[i]] == 0:
-            self._mark(self.father[i], pruned, marks)
+            self._mark(self.father[i], pruned, marks, children)
         if self.mother[i] != -1 and pruned[self.mother[i]] != 1 and marks[self.mother[i]] == 0:
-            self._mark(self.mother[i], pruned, marks)
+            self._mark(self.mother[i], pruned, marks, children)
 
     def get_cutsets(self) -> List[int]:
         pruned = self.get_pruning()
         n = self.n_total
+        children = self._children_list()
         for i in range(n):
             if pruned[i] != 1:
                 marks = [0] * n
                 marks[i] = 1
                 # find a starting neighbour that is not pruned
                 start = n
-                for j in range(n):
-                    if (self.mother[j] == i or self.father[j] == i) and pruned[j] != 1:
+                for j in children[i]:
+                    if pruned[j] != 1:
                         start = j
                         break
                 if start == n:
@@ -305,7 +347,7 @@ class Pedigree:
                         start = self.mother[i]
                 if start == n:
                     continue  # i is unconnected
-                self._mark(start, pruned, marks)
+                self._mark(start, pruned, marks, children)
                 # If anything is unmarked, ``i`` is a cutset
                 for j in range(n):
                     if marks[j] == 0:

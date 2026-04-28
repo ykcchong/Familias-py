@@ -129,14 +129,17 @@ class Pater:
                 silent_allele=int(sys.index[sys.silent_allele]) if sys.has_silent_allele else -1,
             )
             # Inject person data into the Pers aliases.
+            injected: List[object] = []
             for person, (a1, a2) in sys.data.items():
                 if person.alias is None:
                     continue
                 ra1 = int(sys.index[a1])
                 ra2 = int(sys.index[a2])
                 person.alias.add_data(sd, ra1, ra2)
+                injected.append(person.alias)
             r = self._odds.execute(sd)
-            self._odds.remove_data()
+            for alias in injected:
+                alias.remove_data()
             sys.result = r
             results.append(r)
         self._results = results

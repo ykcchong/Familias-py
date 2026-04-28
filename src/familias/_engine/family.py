@@ -36,10 +36,15 @@ class Person:
     def has_ancestor(self, p: "Person") -> bool:
         if self is p:
             return True
-        if self.mother is not None and self.mother.has_ancestor(p):
-            return True
-        if self.father is not None and self.father.has_ancestor(p):
-            return True
+        stack = [self.mother, self.father]
+        while stack:
+            curr = stack.pop()
+            if curr is None:
+                continue
+            if curr is p:
+                return True
+            stack.append(curr.mother)
+            stack.append(curr.father)
         return False
 
     # --- relationship maintenance ---------------------------------------

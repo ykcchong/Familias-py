@@ -22,11 +22,4 @@ def get_name_prefix(names) -> str:
 
 def mypow(x: float, n: int) -> float:
     """Integer-exponent power, identical semantics to ``special::mypow``."""
-    if n == 0:
-        return 1.0
-    if n < 0:
-        return 1.0 / mypow(x, -n)
-    out = 1.0
-    for _ in range(n):
-        out *= x
-    return out
+    return x ** n

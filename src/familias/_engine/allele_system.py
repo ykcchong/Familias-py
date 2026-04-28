@@ -79,54 +79,46 @@ class AlleleSystem:
         ``src/alsys.cpp`` (the post-2014 version using flat mutation matrices).
         """
         n_alleles = self.n_alleles
-        index = np.zeros(n_alleles, dtype=int)
         exists_in_data = np.zeros(n_alleles, dtype=bool)
 
         n_extra = 0
         if self.simplify_mutation_matrix:
-            for (a1, a2) in self.data.values():
-                exists_in_data[a1] = True
-                exists_in_data[a2] = True
+            if self.data:
+                vals = np.fromiter(
+                    (a for pair in self.data.values() for a in pair),
+                    dtype=int,
+                    count=len(self.data) * 2,
+                )
+                exists_in_data[vals] = True
             if self.has_silent_allele:
                 exists_in_data[self.silent_allele] = True
             n_extra = int((~exists_in_data).sum())
 
         if n_extra > 1:
-            # First reduced allele (index 0) is the "collapsed" one.
-            n_data = 1
-            for i in range(n_alleles):
-                if exists_in_data[i]:
-                    index[i] = n_data
-                    n_data += 1
+            obs = np.where(exists_in_data)[0]
+            unobs = np.where(~exists_in_data)[0]
+            n_data = len(obs) + 1
+            index = np.zeros(n_alleles, dtype=int)
+            index[obs] = np.arange(1, len(obs) + 1)
             dataprob = np.zeros(n_data)
-            dataprob[0] = 1.0
-            for i in range(n_alleles):
-                if exists_in_data[i]:
-                    dataprob[index[i]] = self.probability[i]
-                    dataprob[0] -= self.probability[i]
-        else:
-            n_data = n_alleles
-            for i in range(n_alleles):
-                index[i] = i
-            dataprob = self.probability.copy()
+            dataprob[0] = 1.0 - self.probability[obs].sum()
+            dataprob[1:] = self.probability[obs]
 
-        Mf = np.zeros((n_data, n_data))
-        Mm = np.zeros((n_data, n_data))
-
-        if n_extra > 1:
             mf = self.mutation_matrix_female
             mm = self.mutation_matrix_male
-            for i in range(n_alleles):
-                if exists_in_data[i]:
-                    for j in range(n_alleles):
-                        Mf[index[i], index[j]] += mf[i, j]
-                        Mm[index[i], index[j]] += mm[i, j]
-                else:
-                    p_i = self.probability[i]
-                    for j in range(n_alleles):
-                        Mf[0, index[j]] += p_i * mf[i, j]
-                        Mm[0, index[j]] += p_i * mm[i, j]
-            # Renormalise the collapsed row.
+            Mf = np.zeros((n_data, n_data))
+            Mm = np.zeros((n_data, n_data))
+
+            Mf[1:, 1:] = mf[np.ix_(obs, obs)]
+            Mf[1:, 0] = mf[np.ix_(obs, unobs)].sum(axis=1)
+            Mf[0, 1:] = self.probability[unobs] @ mf[np.ix_(unobs, obs)]
+            Mf[0, 0] = self.probability[unobs] @ mf[np.ix_(unobs, unobs)].sum(axis=1)
+
+            Mm[1:, 1:] = mm[np.ix_(obs, obs)]
+            Mm[1:, 0] = mm[np.ix_(obs, unobs)].sum(axis=1)
+            Mm[0, 1:] = self.probability[unobs] @ mm[np.ix_(unobs, obs)]
+            Mm[0, 0] = self.probability[unobs] @ mm[np.ix_(unobs, unobs)].sum(axis=1)
+
             s = Mf[0].sum()
             if s > 0:
                 Mf[0] /= s
@@ -134,8 +126,11 @@ class AlleleSystem:
             if s > 0:
                 Mm[0] /= s
         else:
-            Mf[:] = self.mutation_matrix_female
-            Mm[:] = self.mutation_matrix_male
+            n_data = n_alleles
+            index = np.arange(n_alleles)
+            dataprob = self.probability.copy()
+            Mf = self.mutation_matrix_female.copy()
+            Mm = self.mutation_matrix_male.copy()
 
         self.index = index
         self.n_dataalleles = n_data

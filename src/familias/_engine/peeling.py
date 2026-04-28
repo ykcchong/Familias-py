@@ -60,15 +60,19 @@ class SystemData:
         return self.dataprobability[a]
 
     def set_allele(self, a: int) -> float:
+        kin = self.kinship
+        if kin == 0.0:
+            return self.dataprobability[a]
         used_a = self._used[a]
         total = self._total_used
-        kin = self.kinship
         val = (used_a * kin + self.dataprobability[a] * (1.0 - kin)) / (1.0 + (total - 1) * kin)
         self._used[a] = used_a + 1
         self._total_used = total + 1
         return val
 
     def unset_allele(self, a: int) -> None:
+        if self.kinship == 0.0:
+            return
         self._used[a] -= 1
         self._total_used -= 1
 
@@ -264,63 +268,112 @@ class Pers(_Link, Pcopy):
             lk.collect_from(oldbranch)
 
     # --- the heart of the peeling algorithm -----------------------------
+    def _allele_pairs(self, sd: SystemData):
+        """Return a small list of valid (pa, ma) pairs when data is present,
+        otherwise ``None`` to signal that the full allele grid should be used."""
+        if not self._has_data:
+            return None
+        a1, a2 = self.allele1, self.allele2
+        if a1 == a2:
+            pairs = [(a1, a1)]
+            if sd.has_silent_allele and a1 != sd.silent_allele:
+                pairs.extend([(a1, sd.silent_allele), (sd.silent_allele, a1)])
+            return pairs
+        return [(a1, a2), (a2, a1)]
+
+    def _precompute_relatives(self):
+        """Cache processed-parent alleles and child alleles so the hot loop
+        avoids repeated attribute lookups and sibling-chain walks."""
+        fath = self.father
+        moth = self.mother
+        fath_proc = fath.is_processed if fath is not None else False
+        moth_proc = moth.is_processed if moth is not None else False
+        fath_alleles = (fath.paternal_allele, fath.maternal_allele) if fath_proc else None
+        moth_alleles = (moth.paternal_allele, moth.maternal_allele) if moth_proc else None
+        proc_children = []
+        p = self.child
+        if self.male:
+            while p is not None:
+                if p.is_processed:
+                    proc_children.append(p.paternal_allele)
+                p = p.paternal_sibling
+        else:
+            while p is not None:
+                if p.is_processed:
+                    proc_children.append(p.maternal_allele)
+                p = p.maternal_sibling
+        return fath_proc, fath_alleles, moth_proc, moth_alleles, proc_children
+
     def execute(self, sd: SystemData) -> float:
         self.is_processed = True
         sum_ = 0.0
         N = sd.number_of_alleles()
         fath = self.father
         moth = self.mother
-        for pa in range(N):
-            for ma in range(N):
-                if self._has_data and not (
-                    (ma == self.allele1 and pa == self.allele2)
-                    or (pa == self.allele1 and ma == self.allele2)
-                ):
-                    if not sd.has_silent_allele:
-                        continue
-                    if (pa != sd.silent_allele and ma != sd.silent_allele) or self.allele1 != self.allele2:
-                        continue
-                    if pa != self.allele1 and ma != self.allele1:
-                        continue
+        branch = self.container_branch()
+        next_link = branch.get_next(self) if branch is not None else None
+        fath_proc, fath_alleles, moth_proc, moth_alleles, proc_children = self._precompute_relatives()
+        mf = sd.dataprobmatrix_male
+        ff = sd.dataprobmatrix_female
+        m_child = mf if self.male else ff
+        pairs = self._allele_pairs(sd)
+        if pairs is not None:
+            for pa, ma in pairs:
                 self.paternal_allele = pa
                 self.maternal_allele = ma
                 prob = 1.0
                 set_pa = False
                 set_ma = False
-                if fath is not None:
-                    if fath.is_processed:
-                        prob *= sd.inherit_prob_male(fath.paternal_allele, fath.maternal_allele, pa)
-                else:
+                if fath_proc:
+                    prob *= 0.5 * (mf[fath_alleles[0], pa] + mf[fath_alleles[1], pa])
+                elif fath is None:
                     prob *= sd.set_allele(pa)
                     set_pa = True
-                if moth is not None:
-                    if moth.is_processed:
-                        prob *= sd.inherit_prob_female(moth.paternal_allele, moth.maternal_allele, ma)
-                else:
+                if moth_proc:
+                    prob *= 0.5 * (ff[moth_alleles[0], ma] + ff[moth_alleles[1], ma])
+                elif moth is None:
                     prob *= sd.set_allele(ma)
                     set_ma = True
-                # Loop over already-processed children
-                p = self.child
-                if self.male:
-                    while p is not None:
-                        if p.is_processed:
-                            prob *= sd.inherit_prob_male(pa, ma, p.paternal_allele)
-                        p = p.paternal_sibling
-                else:
-                    while p is not None:
-                        if p.is_processed:
-                            prob *= sd.inherit_prob_female(pa, ma, p.maternal_allele)
-                        p = p.maternal_sibling
+                for child_allele in proc_children:
+                    prob *= 0.5 * (m_child[pa, child_allele] + m_child[ma, child_allele])
 
                 if prob > 0:
-                    lk = self.container_branch().get_next(self)
-                    if lk is not None:
-                        prob *= lk.execute(sd)
+                    if next_link is not None:
+                        prob *= next_link.execute(sd)
                     sum_ += prob
                 if set_pa:
                     sd.unset_allele(pa)
                 if set_ma:
                     sd.unset_allele(ma)
+        else:
+            for pa in range(N):
+                for ma in range(N):
+                    self.paternal_allele = pa
+                    self.maternal_allele = ma
+                    prob = 1.0
+                    set_pa = False
+                    set_ma = False
+                    if fath_proc:
+                        prob *= 0.5 * (mf[fath_alleles[0], pa] + mf[fath_alleles[1], pa])
+                    elif fath is None:
+                        prob *= sd.set_allele(pa)
+                        set_pa = True
+                    if moth_proc:
+                        prob *= 0.5 * (ff[moth_alleles[0], ma] + ff[moth_alleles[1], ma])
+                    elif moth is None:
+                        prob *= sd.set_allele(ma)
+                        set_ma = True
+                    for child_allele in proc_children:
+                        prob *= 0.5 * (m_child[pa, child_allele] + m_child[ma, child_allele])
+
+                    if prob > 0:
+                        if next_link is not None:
+                            prob *= next_link.execute(sd)
+                        sum_ += prob
+                    if set_pa:
+                        sd.unset_allele(pa)
+                    if set_ma:
+                        sd.unset_allele(ma)
         self.is_processed = False
         return sum_
 
@@ -331,52 +384,36 @@ class Pers(_Link, Pcopy):
         fath = self.father
         moth = self.mother
         index = index * N * N
-        for pa in range(N):
-            for ma in range(N):
-                if self._has_data and not (
-                    (ma == self.allele1 and pa == self.allele2)
-                    or (pa == self.allele1 and ma == self.allele2)
-                ):
-                    if not sd.has_silent_allele:
-                        continue
-                    if (pa != sd.silent_allele and ma != sd.silent_allele) or self.allele1 != self.allele2:
-                        continue
-                    if pa != self.allele1 and ma != self.allele1:
-                        continue
+        cs = self.container_cutset()
+        next_pers = cs.get_next_pers(self) if cs is not None else None
+        fath_proc, fath_alleles, moth_proc, moth_alleles, proc_children = self._precompute_relatives()
+        mf = sd.dataprobmatrix_male
+        ff = sd.dataprobmatrix_female
+        m_child = mf if self.male else ff
+        pairs = self._allele_pairs(sd)
+        if pairs is not None:
+            for pa, ma in pairs:
                 self.paternal_allele = pa
                 self.maternal_allele = ma
                 prob = 1.0
                 set_pa = False
                 set_ma = False
-                if fath is not None:
-                    if fath.is_processed:
-                        prob *= sd.inherit_prob_male(fath.paternal_allele, fath.maternal_allele, pa)
-                else:
+                if fath_proc:
+                    prob *= 0.5 * (mf[fath_alleles[0], pa] + mf[fath_alleles[1], pa])
+                elif fath is None:
                     prob *= sd.set_allele(pa)
                     set_pa = True
-                if moth is not None:
-                    if moth.is_processed:
-                        prob *= sd.inherit_prob_female(moth.paternal_allele, moth.maternal_allele, ma)
-                else:
+                if moth_proc:
+                    prob *= 0.5 * (ff[moth_alleles[0], ma] + ff[moth_alleles[1], ma])
+                elif moth is None:
                     prob *= sd.set_allele(ma)
                     set_ma = True
-                p = self.child
-                if self.male:
-                    while p is not None:
-                        if p.is_processed:
-                            prob *= sd.inherit_prob_male(pa, ma, p.paternal_allele)
-                        p = p.paternal_sibling
-                else:
-                    while p is not None:
-                        if p.is_processed:
-                            prob *= sd.inherit_prob_female(pa, ma, p.maternal_allele)
-                        p = p.maternal_sibling
+                for child_allele in proc_children:
+                    prob *= 0.5 * (m_child[pa, child_allele] + m_child[ma, child_allele])
                 if prob > 0:
-                    cs = self.container_cutset()
-                    pr = cs.get_next_pers(self)
                     new_index = index + N * pa + ma
-                    if pr is not None:
-                        prob *= pr.execute_cutset_part(sd, new_index)
+                    if next_pers is not None:
+                        prob *= next_pers.execute_cutset_part(sd, new_index)
                     else:
                         prob *= cs.execute_cutset(sd, new_index)
                     sum_ += prob
@@ -384,6 +421,37 @@ class Pers(_Link, Pcopy):
                     sd.unset_allele(pa)
                 if set_ma:
                     sd.unset_allele(ma)
+        else:
+            for pa in range(N):
+                for ma in range(N):
+                    self.paternal_allele = pa
+                    self.maternal_allele = ma
+                    prob = 1.0
+                    set_pa = False
+                    set_ma = False
+                    if fath_proc:
+                        prob *= 0.5 * (mf[fath_alleles[0], pa] + mf[fath_alleles[1], pa])
+                    elif fath is None:
+                        prob *= sd.set_allele(pa)
+                        set_pa = True
+                    if moth_proc:
+                        prob *= 0.5 * (ff[moth_alleles[0], ma] + ff[moth_alleles[1], ma])
+                    elif moth is None:
+                        prob *= sd.set_allele(ma)
+                        set_ma = True
+                    for child_allele in proc_children:
+                        prob *= 0.5 * (m_child[pa, child_allele] + m_child[ma, child_allele])
+                    if prob > 0:
+                        new_index = index + N * pa + ma
+                        if next_pers is not None:
+                            prob *= next_pers.execute_cutset_part(sd, new_index)
+                        else:
+                            prob *= cs.execute_cutset(sd, new_index)
+                        sum_ += prob
+                    if set_pa:
+                        sd.unset_allele(pa)
+                    if set_ma:
+                        sd.unset_allele(ma)
         self.is_processed = False
         return sum_
 
