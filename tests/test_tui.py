@@ -9,9 +9,12 @@ from familias.tui.freq_loader import builtin_databases
 from familias.tui.widgets import parse_genotype, fmt_genotype
 
 
-def test_builtin_databases_includes_norwegian():
+def test_builtin_databases_excludes_norwegian():
     dbs = builtin_databases()
-    assert any(k.startswith("NorwegianFrequencies") for k in dbs)
+    # Norwegian dataset is no longer exposed via the database picker.
+    assert not any("norwegian" in k.lower() for k in dbs)
+    # At least one bundled database should still be present.
+    assert dbs, "expected at least one bundled database"
 
 
 def test_parse_genotype_variants():
@@ -105,8 +108,10 @@ def test_tui_one_parent_live_lr():
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, OneParentScreen)
-            # Pick a built-in DB
-            screen.topbar.db_select.value = "NorwegianFrequencies (built-in)"
+            # Pick the first available built-in DB.
+            from familias.tui.freq_loader import builtin_databases as _bdbs
+            db_name = next(iter(_bdbs()))
+            screen.topbar.db_select.value = db_name
             await pilot.pause()
             row = screen.rows["TPOX"]
             row._inputs["AF"].value = "8,9"

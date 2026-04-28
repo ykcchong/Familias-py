@@ -89,15 +89,23 @@ def load_rda(path: str | Path) -> FreqDB:
 # ---------------------------------------------------------------------------
 # Built-in / repo-discovered databases
 # ---------------------------------------------------------------------------
+# Friendly display names for bundled database files. Keyed by the file's
+# stem (case-sensitive); fallback is the stem itself.
+_DB_DISPLAY_NAMES: Dict[str, str] = {
+    "fsi": "Hong Kong Chinese",
+}
+
+
 def builtin_databases() -> Dict[str, FreqDB]:
     """Return ``{name: freq_db}`` for each readily-available database.
 
-    Always includes ``NorwegianFrequencies``. Also scans the ``data/``
-    directory shipped inside the ``familias`` package for any ``.json``
-    or ``.rda`` files.
+    Scans the ``data/`` directory shipped inside the ``familias`` package
+    for any ``.json`` or ``.rda`` files. Bundled files listed in
+    ``_DB_DISPLAY_NAMES`` are exposed under their friendly display name
+    instead of the file stem. The legacy ``NorwegianFrequencies`` dataset
+    is intentionally not exposed here.
     """
-    from .. import NorwegianFrequencies
-    out: Dict[str, FreqDB] = {"NorwegianFrequencies (built-in)": dict(NorwegianFrequencies)}
+    out: Dict[str, FreqDB] = {}
 
     data_dir = resources.files("familias") / "data"
     if data_dir.is_dir():
@@ -107,11 +115,12 @@ def builtin_databases() -> Dict[str, FreqDB]:
             suf = f.suffix.lower()
             if suf not in (".json", ".rda"):
                 continue
-            # Skip the built-in Norwegian frequencies to avoid duplication.
+            # Skip the bundled Norwegian frequencies; users who need it
+            # can still import ``familias.NorwegianFrequencies`` directly.
             if f.stem == "norwegian_frequencies":
                 continue
             try:
-                out[f.stem] = load_freq_file(f)
+                out[_DB_DISPLAY_NAMES.get(f.stem, f.stem)] = load_freq_file(f)
             except Exception:
                 pass
     return out
